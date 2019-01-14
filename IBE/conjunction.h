@@ -30,8 +30,21 @@ template <class Atr, class Val>
 struct Conjunction
 {
     std::vector<Pair<Atr, Val>> pairs;
+    int k;
+    Conjunction() : k(0) {}
     void insert(Atr attr, Val val, Belong anno, double weight)
     {
+        if (anno == IN) {
+            bool new_item = true;
+            for (const auto& i : pairs) {
+                if (i.attribute == attr) {
+                    new_item = false;
+                }
+            }
+            if (new_item) {
+                k++;
+            }
+        }
         pairs.push_back(Pair<Atr, Val>(attr, val, anno, weight));
     }
 };
