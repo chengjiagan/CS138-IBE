@@ -7,11 +7,24 @@
 #include <unordered_map>
 #include <algorithm>
 
+namespace std
+{
+    template<> struct hash<>
+    {
+        typedef S argument_type;
+        typedef std::size_t result_type;
+        result_type operator()(argument_type const& s) const
+        {
+            result_type const h1(std::hash<std::string>{}(s.first_name));
+            result_type const h2(std::hash<std::string>{}(s.last_name));
+            return h1 ^ (h2 << 1); // 或使用 boost::hash_combine （见讨论）
+        }
+    };
+}
+
 template <class Atr, class Val>
 class InvertedList {
 private:
-    std::vector<Conjunction<Atr, Val>> conjs;
-    std::vector<std::unordered_map<PairNode, Plist>> kindex;
     struct PairNode {
         Atr attribute;
         Val value;
@@ -21,9 +34,9 @@ private:
         int id;
         Belong annotation;
         double weight;
-        EntryNode(int _index, Belong _anno, double _weight) 
-            : id(_index), annotation(_anno), weight(_weight)
-        {}
+        EntryNode* next;
+        EntryNode (int _index, Belong _anno, double _weight, EntryNode* _next)
+            : id(_index), annotation(_anno), weight(_weight), next(_next) {}
         bool operator< (const EntryNode& other)
         {
             if (id == other.id) {
@@ -35,30 +48,45 @@ private:
         }
     };
     struct Plist {
-        std::vector<EntryNode> plist;
-        int current_entry;
-        Plist(const std::vector<EntryNode>& _plist, int _current = 0)
-            : plist(_plist), current_entry(_current) {}
+        EntryNode* head;
+        EntryNode* current;
+        Plist()
+            : head(nullptr), current(nullptr) {}
+        Plist(int id, Belong anno, double weight)
+        {
+            head = new EntryNode(id, anno, weight, nullptr);
+        }
         bool operator< (const Plist& other)
         {
-            if (current_entry == plist.size()) {
+            if (current == nullptr) {
                 return true;
             }
-            else if (other.current_entry == other.plist.size()) {
+            else if (other.current == nullptr) {
                 return false;
             }
             else {
-                return plist[current_entry] < other.currentEntry();
+                return *current < other.currentEntry();
             }
         }
-        EntryNode currentEntry() { return plist[current_entry]; }
+        const EntryNode& currentEntry() { return *current; }
         void skip(int id)
         {
-            while (plist[current_entry] < id) {
-                current_entry++;
+            while (current != nullptr || current->id < id) {
+                current = current->next;
             }
         }
+        void insert(int id, Belong anno, double weight)
+        {
+            EntryNode** node = &head;
+            while (*node != nullptr || (*node)->id < id) {
+                node = &((*node)->next);
+            }
+            *node = new EntryNode(id, anno, weight, *node);
+        }
+        void init() { current = head; }
     };
+    std::vector<Conjunction<Atr, Val>> conjs;
+    std::vector<std::unordered_map<e, Plist>> kindex;
     const std::vector<Plist> getPlists(const Conjunction<Atr, Val>& assign, int k) const;
 
 public:
@@ -73,33 +101,45 @@ void InvertedList<Atr, Val>::addConj(const Conjunction<Atr, Val>& conj)
     int id = conjs.size();
     conjs.push_back(conj);
 
-    if (kindex.size() - 1 < conj.k) {
-        kindex.resize(k + 1);
+    if (kindex.size() < conj.pairs.size() + 1) {
+        kindex.resize(conj.pairs.size() + 1);
     }
-    auto& plists = kindex[conj.k];
-    for (int i = 0; i < conj.k; i++) {
-        auto& plist = plists[PairNode(conj.pairs[i].attribute, conj.pairs[i].value)];
-        plist.plist.push_back(EntryNode(id, conj.pairs[i].annotation, conj.pairs[i].weight));
-        std::sort(plist.plist.begin(), plist.plist.end());
+    auto& plists = kindex[conj.pairs.size()];
+    for (const auto& i : conj.pairs) {
+        const auto& iter = plists.find(PairNode(i.attribute, i.value));
+        if (iter != plists.end()) {
+            iter->second.insert(id, i.annotation, i.weight);
+        }
+        else {
+            plists.insert({ PairNode(i.attribute, i.value), Plist(id, i.annotation, i.weight) });
+        }
     }
+    /*
+    for (int i = 0; i < conj.pairs.size(); i++) {
+        Plist& plist = plists[PairNode(conj.pairs[i].attribute, conj.pairs[i].value)];
+        plist.insert(id, conj.pairs[i].annotation, conj.pairs[i].weight);
+    }*/
 }
 
 template <class Atr, class Val>
 const std::vector<int> InvertedList<Atr, Val>::assign(const Conjunction<Atr, Val>& assign) const
 {
     std::vector<int> result;
-    for (int k = std::min(assign.k, kindex.size() - 1); k >= 0; k--) {
+    for (int k = std::min(assign.pairs.size() - 1, kindex.size() - 1); k >= 0; k--) {
         auto plists = getPlists(assign, k);
+        for (auto& i : plists) {
+            i.init();
+        }
         int K = k == 0 ? 1 : k;
-        if (plists.size() < k) {
+        if (plists.size() < K) {
             continue;
         }
-        while (plists[K - 1].current_entry < plists[K - 1].plist.size()) {
+        while (plists[K - 1].current != nullptr) {
             int next_id = 0;
             std::sort(plists.begin(), plists.end());
             if (plists[0].currentEntry().id == plists[K - 1].currentEntry().id) {
                 if (plists[0].currentEntry().annotation == NOT_IN) {
-                    int reject = plist[0].currentEntry().id;
+                    int reject = plists[0].currentEntry().id;
                     for (int l = K; l >= plists.size() - 1; l--) {
                         if (plists[l].currentEntry().id == reject) {
                             plists[l].skip(reject + 1);
@@ -110,12 +150,12 @@ const std::vector<int> InvertedList<Atr, Val>::assign(const Conjunction<Atr, Val
                     }
                 }
                 else {
-                    result.push_back(plists[K - 1].currentEntry.id);
+                    result.push_back(plists[K - 1].currentEntry().id);
                 }
-                next_id = plists[K - 1].currentEntry.id + 1;
+                next_id = plists[K - 1].currentEntry().id + 1;
             }
             else {
-                next_id = plists[K - 1].currentEntry.id;
+                next_id = plists[K - 1].currentEntry().id;
             }
             for (int l = 0; l < K; l++) {
                 plists[l].skip(next_id);
@@ -125,12 +165,12 @@ const std::vector<int> InvertedList<Atr, Val>::assign(const Conjunction<Atr, Val
 }
 
 template <class Atr, class Val>
-const std::vector<typename InvertedList<Atr, Val>::Plist> 
+const std::vector<typename InvertedList<Atr, Val>::Plist>
 InvertedList<Atr, Val>::getPlists(const Conjunction<Atr, Val>& assign, int k) const
 {
     std::vector<Plist> result;
-    for (int i = 0; i < assign.k; i++) {
-        auto& iter = kindex[k].find(PairNode(assign.pairs[i].attribute, assign.pairs[i].value));
+    for (const auto& i : assign.pairs) {
+        auto& iter = kindex[k].find(PairNode(i.attribute, i.value));
         if (iter != kindex[k].end()) {
             result.push_back(*iter);
         }
