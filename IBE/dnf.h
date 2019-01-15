@@ -1,4 +1,4 @@
-/* the structure that represents conjunctions
+/* the structure that represents DNF
  * an assignment can also be represented by this conjunctions
  */
 
@@ -6,15 +6,15 @@
 
 #include <vector>
 
- // the difination of pair/key
- // Atr: the type of attribute
- // Val: the type of value
 enum Belong
 {
     NOT_IN, // v in A
     IN // v not in A
 };
 
+// the difination of pair/key
+// Atr: the type of attribute
+// Val: the type of value
 template <class Atr, class Val>
 struct Pair
 {
@@ -26,15 +26,17 @@ struct Pair
         : attribute(_attr), value(_val), annotation(_anno), weight(_weight) {}
 };
 
+// conjunction regarded as combination of pairs
 template <class Atr, class Val>
 struct Conjunction
 {
     std::vector<Pair<Atr, Val>> pairs;
-    int k;
+    int k; // the number of IN pairs
     Conjunction() : k(0) {}
     void insert(Atr attr, Val val, Belong anno, double weight)
     {
         if (anno == IN) {
+            // prevent repeat count
             bool new_item = true;
             for (const auto& i : pairs) {
                 if (i.attribute == attr) {
@@ -49,6 +51,7 @@ struct Conjunction
     }
 };
 
+// DNF regarded as combination of conjunctions
 template <class Atr, class Val>
 struct DNF {
     std::vector<Conjunction<Atr, Val>> conjs;
