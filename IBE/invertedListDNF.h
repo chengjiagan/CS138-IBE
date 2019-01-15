@@ -2,14 +2,16 @@
  */
 
 #pragma once
-#include "conjunction.h"
+#include "dnf.h"
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
 #include <functional>
+#include <utility>
+#include <queue>
 
 template <class Atr, class Val>
-class InvertedList {
+class InvertedListDNF {
 private:
     struct PairNode {
         Atr attribute;
@@ -47,10 +49,13 @@ private:
     struct Plist {
         EntryNode* head;
         EntryNode* current;
+        double ub;
+        double ws;
         Plist()
             : head(nullptr), current(nullptr) {}
-        Plist(int id, Belong anno, double weight)
+        Plist(int id, Belong anno, double weight, double _ub)
         {
+            ub = _ub;
             head = new EntryNode(id, anno, weight, nullptr);
         }
         bool operator< (const Plist& other) const
@@ -82,21 +87,33 @@ private:
         }
         void init() { current = head; }
     };
-    std::vector<Conjunction<Atr, Val>> conjs;
+    std::vector<DNF<Atr, Val>> dnfs;
+    std::vector<std::pair<Conjunction<Atr, Val>, int>> conjs;
     std::vector<std::unordered_map<PairNode, Plist, PairHash>> kindex;
-    const std::vector<Plist> getPlists(const Conjunction<Atr, Val>& assign, int k) const;
+    const std::pair<std::vector<Plist>, double> getPlists(const Conjunction<Atr, Val>& assign, int k) const;
+    void addConj(const Conjunction<Atr, Val>& conj, int d);
 
 public:
-    void addConj(const Conjunction<Atr, Val>& conj);
-    const std::vector<int> assign(const Conjunction<Atr, Val>& assign) const;
-    const Conjunction<Atr, Val> conjOf(const int i) const;
+    void addDNF(const DNF<Atr, Val>& dnf);
+    const std::vector<std::pair<int, double>> assign(const Conjunction<Atr, Val>& assign, int n) const;
+    const DNF<Atr, Val> DNFOf(const int d) const { return dnfs[d]; }
 };
 
 template <class Atr, class Val>
-void InvertedList<Atr, Val>::addConj(const Conjunction<Atr, Val>& conj)
+void InvertedListDNF<Atr, Val>::addDNF(const DNF<Atr, Val>& dnf)
+{
+    int d = dnfs.size();
+    dnfs.push_back(dnf);
+    for (const auto& i : dnf.conjs) {
+        addConj(i, d);
+    }
+}
+
+template <class Atr, class Val>
+void InvertedListDNF<Atr, Val>::addConj(const Conjunction<Atr, Val>& conj, int d)
 {
     int id = conjs.size();
-    conjs.push_back(conj);
+    conjs.push_back({ conj, d });
 
     if (kindex.size() < conj.k + 1) {
         kindex.resize(conj.k + 1);
@@ -106,9 +123,12 @@ void InvertedList<Atr, Val>::addConj(const Conjunction<Atr, Val>& conj)
         const auto& iter = plists.find(PairNode(i.attribute, i.value));
         if (iter != plists.end()) {
             iter->second.insert(id, i.annotation, i.weight);
+            if (i.weight > iter->second.ub) {
+                iter->second.ub = i.weight;
+            }
         }
         else {
-            plists.insert({ PairNode(i.attribute, i.value), Plist(id, i.annotation, i.weight) });
+            plists.insert({ PairNode(i.attribute, i.value), Plist(id, i.annotation, i.weight, i.weight) });
         }
     }
     if (conj.k == 0) {
@@ -117,17 +137,21 @@ void InvertedList<Atr, Val>::addConj(const Conjunction<Atr, Val>& conj)
             iter->second.insert(id, IN, 0);
         }
         else {
-            plists.insert({ PairNode(0, 0, true), Plist(id, IN, 0) });
+            plists.insert({ PairNode(0, 0, true), Plist(id, IN, 0, 0) });
         }
     }
 }
 
 template <class Atr, class Val>
-const std::vector<int> InvertedList<Atr, Val>::assign(const Conjunction<Atr, Val>& assign) const
+const std::vector<std::pair<int, double>> InvertedListDNF<Atr, Val>::assign(const Conjunction<Atr, Val>& assign, int n) const
 {
-    std::vector<int> result;
+    std::vector<std::pair<int, double>> top_n(n, { -1, -1 });
     for (int k = std::min(assign.k - 1, (int)kindex.size() - 1); k >= 0; k--) {
-        auto plists = getPlists(assign, k);
+        auto res = getPlists(assign, k);
+        if (res.second <= top_n.back().second) {
+            continue;
+        }
+        std::vector<Plist>& plists = res.first;
         for (auto& i : plists) {
             i.init();
         }
@@ -151,7 +175,32 @@ const std::vector<int> InvertedList<Atr, Val>::assign(const Conjunction<Atr, Val
                     }
                 }
                 else {
-                    result.push_back(plists[K - 1].currentEntry().id);
+                    double sum = 0.0;
+                    for (int i = 0; i < K; i++) {
+                        sum += plists[i].ws * plists[i].currentEntry().weight;
+                    }
+                    if (sum > top_n.back().second) {
+                        bool find_same = false;
+                        int d = conjs[plists[K - 1].currentEntry().id].second;
+                        for (auto i = top_n.begin(); i != top_n.end(); i++) {
+                            if (i->first == d && i->second < sum) {
+                                top_n.erase(i);
+                                top_n.push_back({ d, sum });
+                                std::sort(top_n.begin(), top_n.end(), [](const std::pair<int, double>& a, const std::pair<int, double>& b) {
+                                    return b.second < a.second;
+                                });
+                                find_same = true;
+                                break;
+                            }
+                        }
+                        if (!find_same) {
+                            top_n.push_back({ d, sum });
+                            std::sort(top_n.begin(), top_n.end(), [](const std::pair<int, double>& a, const std::pair<int, double>& b) {
+                                return b.second < a.second;
+                            });
+                            top_n.pop_back();
+                        }
+                    }
                 }
                 next_id = plists[K - 1].currentEntry().id + 1;
             }
@@ -164,25 +213,27 @@ const std::vector<int> InvertedList<Atr, Val>::assign(const Conjunction<Atr, Val
             std::sort(plists.begin(), plists.end());
         }
     }
-    return result;
+    return top_n;
 }
 
 template <class Atr, class Val>
-const std::vector<typename InvertedList<Atr, Val>::Plist>
-InvertedList<Atr, Val>::getPlists(const Conjunction<Atr, Val>& assign, int k) const
+const std::pair<typename std::vector<typename InvertedListDNF<Atr, Val>::Plist>, double>
+InvertedListDNF<Atr, Val>::getPlists(const Conjunction<Atr, Val>& assign, int k) const
 {
     std::vector<Plist> result;
+    std::priority_queue<double> score;
     for (const auto& i : assign.pairs) {
         const auto& iter = kindex[k].find(PairNode(i.attribute, i.value));
         if (iter != kindex[k].end()) {
             result.push_back(iter->second);
+            result.back().ws = i.weight;
+            score.push(i.weight * iter->second.ub);
         }
     }
-    return result;
-}
-
-template <class Atr, class Val>
-const Conjunction<Atr, Val> InvertedList<Atr, Val>::conjOf(const int i) const
-{
-    return conjs[i];
+    double sum = 0;
+    for (int i = 0; i < k; i++) {
+        sum += score.top();
+        score.pop();
+    }
+    return { result, sum };
 }

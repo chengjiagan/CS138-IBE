@@ -20,10 +20,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="conjunction.h">
+    <ClInclude Include="dnf.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="invertedList.h">
+    <ClInclude Include="invertedListDNF.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

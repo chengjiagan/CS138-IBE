@@ -118,8 +118,8 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="conjunction.h" />
-    <ClInclude Include="invertedList.h" />
+    <ClInclude Include="dnf.h" />
+    <ClInclude Include="invertedListDNF.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

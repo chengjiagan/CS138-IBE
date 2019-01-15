@@ -48,3 +48,12 @@ struct Conjunction
         pairs.push_back(Pair<Atr, Val>(attr, val, anno, weight));
     }
 };
+
+template <class Atr, class Val>
+struct DNF {
+    std::vector<Conjunction<Atr, Val>> conjs;
+    void insert(const Conjunction<Atr, Val>& conj)
+    {
+        conjs.push_back(conj);
+    }
+};
