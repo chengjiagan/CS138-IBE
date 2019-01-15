@@ -22,6 +22,7 @@ struct Pair
     Val value;
     Belong annotation;
     double weight;
+    Pair() {}
     Pair(Atr _attr, Val _val, Belong _anno, double _weight)
         : attribute(_attr), value(_val), annotation(_anno), weight(_weight) {}
 };

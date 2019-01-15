@@ -1,49 +1,54 @@
-#include <iostream>
 #include "dnf.h"
 #include "invertedListDNF.h"
+#include "tools.h"
+#include <iostream>
+#include <fstream>
+#include <string>
+
+using namespace std;
 
 int main()
 {
-    Conjunction<char, int> conj1;
-    conj1.insert('A', 3, IN, 0.1);
-    conj1.insert('B', 1, IN, 4.0);
-    Conjunction<char, int> conj2;
-    conj2.insert('A', 3, IN, 0.1);
-    conj2.insert('C', 0, IN, 0.3);
-    Conjunction<char, int> conj3;
-    conj3.insert('A', 3, IN, 0.2);
-    conj3.insert('C', 1, IN, 0.5);
-    conj3.insert('B', 2, NOT_IN, 0);
-    Conjunction<char, int> conj4;
-    conj4.insert('B', 2, IN, 1.5);
-    conj4.insert('C', 1, IN, 0.9);
-    Conjunction<char, int> conj5;
-    conj5.insert('A', 3, IN, 0.1);
-    conj5.insert('A', 4, IN, 0.5);
-    Conjunction<char, int> conj6;
-    conj6.insert('B', 1, NOT_IN, 0);
-    conj6.insert('B', 2, NOT_IN, 0);
+    ifstream in("assignment.txt");
+    Pair<int, int>* pairs = new Pair<int, int>[3000];
 
-    DNF<char, int> dnf1;
-    dnf1.insert(conj1);
-    dnf1.insert(conj2);
-    DNF<char, int> dnf2;
-    dnf2.insert(conj3);
-    dnf2.insert(conj4);
-    DNF<char, int> dnf3;
-    dnf3.insert(conj5);
-    dnf3.insert(conj6);
+    for (int i = 0; i < 3000; i++) {
+        string str;
+        in >> pairs[i].attribute >> pairs[i].value >> str >> pairs[i].weight;
+        if (str == "IN") {
+            pairs[i].annotation = IN;
+        }
+        else {
+            pairs[i].annotation = NOT_IN;
+        }
+    }
 
+    InvertedListDNF<int, int> list;
+    for (int k = 0; k < 10; k++) {
+        DNF<int, int> dnf;
+        for (int i = 0; i < 3; i++) {
+            Conjunction<int, int> conj;
+            for (int j = 0; j < 10; j++) {
+                int index = k * 30 + i * 10 + j;
+                conj.insert(pairs[index].attribute, pairs[index].value, pairs[index].annotation, pairs[index].weight);
+            }
+            dnf.insert(conj);
+        }
+        list.addDNF(dnf);
+    }
 
-    InvertedListDNF<char, int> list;
-    list.addDNF(dnf1);
-    list.addDNF(dnf2);
-    list.addDNF(dnf3);
+    Conjunction<int, int> assigns[10];
+    for (int i = 0; i < 10; i++) {
+        int ass[30];
+        randomArray(ass, 30, 0, 2999);
+        for (int j = 0; j < 30; j++) {
+            assigns[i].insert(pairs[ass[j]].attribute, pairs[ass[j]].value, pairs[ass[j]].annotation, pairs[ass[j]].weight);
+        }
+    }
 
-    Conjunction<char, int> assign;
-    assign.insert('A', 3, IN, 0.8);
-    assign.insert('B', 2, IN, 1.0);
-    assign.insert('C', 1, IN, 0.9);
+    for (int i = 0; i < 10; i++) {
+        auto res = list.assign(assigns[i], 5);
+    }
 
-    auto& result = list.assign(assign, 2);
+    return 0;
 }

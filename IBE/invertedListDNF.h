@@ -274,6 +274,9 @@ InvertedListDNF<Atr, Val>::getPlists(const Conjunction<Atr, Val>& assign, int k)
     // calculate the top-k score
     double sum = 0;
     for (int i = 0; i < k; i++) {
+        if (score.empty()) {
+            break;
+        }
         sum += score.top();
         score.pop();
     }
